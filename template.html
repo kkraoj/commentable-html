@@ -529,6 +529,9 @@
 
   const rid = () => Math.random().toString(36).slice(2, 10);
 
+  let pages = null;
+  let currentPageIdx = 0;
+
   function syncDataNode() {
     // Escape closing-script sequences so the JSON survives HTML re-serialization
     const json = JSON.stringify(state, null, 2).replace(/<\/script/gi, '<\\/script');
@@ -555,10 +558,20 @@
     }
   });
 
+  initPages();
   state.threads.forEach((t) => { if (isPoint(t)) renderPin(t); });
+  updatePinVisibility();
+
+  function pinContainer(thread) {
+    if (pages && thread.anchor.pageId) {
+      return pages.find(function(p) { return p.id === thread.anchor.pageId; }) || article;
+    }
+    return article;
+  }
 
   function renderPin(thread) {
-    let pin = article.querySelector('.comment-pin[data-thread-id="' + thread.id + '"]');
+    const container = pinContainer(thread);
+    let pin = container.querySelector('.comment-pin[data-thread-id="' + thread.id + '"]');
     if (!pin) {
       pin = document.createElement('div');
       pin.className = 'comment-pin';
@@ -566,10 +579,13 @@
       pin.innerHTML = '<span class="icon">' +
         '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M5 11.5052L5.00001 11.5105C4.99841 12.5582 5.21988 13.593 5.64824 14.5464C5.8539 15.0041 5.87997 15.5224 5.72128 15.9985L4.58117 19.4189L8.00152 18.2787C8.47758 18.1201 8.9959 18.1461 9.45364 18.3518C10.4091 18.7811 11.4462 19.0026 12.4963 19L12.5009 19C16.6426 18.9995 20 15.6418 20 11.5C20 7.35786 16.6421 4 12.5 4C8.35786 4 5 7.35786 5 11.5V11.5052ZM3 11.5052L3 11.5C3 6.25329 7.25329 2 12.5 2C17.7467 2 22 6.25329 22 11.5C22 16.7463 17.7473 20.9994 12.5012 21C11.1666 21.0033 9.84836 20.7217 8.63398 20.1761L3.31625 21.9487C2.95692 22.0685 2.56075 21.9749 2.29292 21.7071C2.02509 21.4393 1.93157 21.0431 2.05134 20.6838L3.82392 15.3661C3.27947 14.1543 2.99797 12.8391 3.00001 11.5075L3 11.5052Z"/></svg>' +
         '</span><span class="count"></span>';
-      article.appendChild(pin);
+      container.appendChild(pin);
     }
     pin.style.left = thread.anchor.left + 'px';
     pin.style.top = thread.anchor.top + 'px';
+    if (pages && thread.anchor.pageId) {
+      pin.style.display = thread.anchor.pageId === pages[currentPageIdx].id ? '' : 'none';
+    }
     const count = pin.querySelector('.count');
     const n = thread.comments.length;
     count.textContent = n > 1 ? n : '';
@@ -578,8 +594,66 @@
   }
 
   function removePin(threadId) {
-    const pin = article.querySelector('.comment-pin[data-thread-id="' + threadId + '"]');
+    const pin = document.querySelector('.comment-pin[data-thread-id="' + threadId + '"]');
     if (pin) pin.remove();
+  }
+
+  function initPages() {
+    let els = [...article.querySelectorAll(':scope > [data-commentable-page]')];
+    if (!els.length) {
+      els = [...article.querySelectorAll(':scope > .slide, :scope > .page')];
+    }
+    if (els.length < 2) return;
+    els.forEach(function(p, i) {
+      if (!p.id) p.id = 'cpage-' + i;
+      p.style.position = 'relative';
+      if (i > 0) p.style.display = 'none';
+    });
+    pages = els;
+    const bar = document.getElementById('annotation-bar');
+    const navDiv = document.createElement('div');
+    navDiv.style.cssText = 'display:flex;align-items:center;gap:0;height:100%';
+    navDiv.innerHTML =
+      '<div style="width:1px;background:var(--border);align-self:stretch"></div>' +
+      '<div style="display:flex;align-items:center;gap:4px;padding:0 10px">' +
+      '<button id="prev-page-btn" class="btn btn--secondary" style="padding:0 8px">&#9664;</button>' +
+      '<span id="page-count" style="font-size:12px;color:var(--text-2);white-space:nowrap;min-width:48px;text-align:center"></span>' +
+      '<button id="next-page-btn" class="btn btn--secondary" style="padding:0 8px">&#9654;</button>' +
+      '</div>';
+    bar.appendChild(navDiv);
+    document.getElementById('prev-page-btn').addEventListener('click', function() { goToPage(currentPageIdx - 1); });
+    document.getElementById('next-page-btn').addEventListener('click', function() { goToPage(currentPageIdx + 1); });
+    updatePageUI();
+  }
+
+  function goToPage(idx) {
+    if (!pages) return;
+    idx = Math.max(0, Math.min(pages.length - 1, idx));
+    if (idx === currentPageIdx) return;
+    currentPageIdx = idx;
+    pages.forEach(function(p, i) { p.style.display = i === idx ? '' : 'none'; });
+    flushOpenReplies({ remove: true });
+    updatePinVisibility();
+    updatePageUI();
+  }
+
+  function updatePageUI() {
+    const prevBtn = document.getElementById('prev-page-btn');
+    const nextBtn = document.getElementById('next-page-btn');
+    const countEl = document.getElementById('page-count');
+    if (!prevBtn) return;
+    prevBtn.disabled = currentPageIdx === 0;
+    nextBtn.disabled = currentPageIdx === pages.length - 1;
+    countEl.textContent = (currentPageIdx + 1) + ' / ' + pages.length;
+  }
+
+  function updatePinVisibility() {
+    if (!pages) return;
+    const activeId = pages[currentPageIdx].id;
+    document.querySelectorAll('.comment-pin').forEach(function(pin) {
+      const t = findThread(pin.dataset.threadId);
+      pin.style.display = (!t || !t.anchor.pageId || t.anchor.pageId === activeId) ? '' : 'none';
+    });
   }
 
   let pinMode = false;
@@ -593,16 +667,23 @@
   pinBtn.addEventListener('click', (e) => { e.stopPropagation(); setPinMode(!pinMode); });
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && pinMode) setPinMode(false);
+    if (pages && !e.target.closest('input, textarea')) {
+      if (e.key === 'ArrowRight' || e.key === 'ArrowDown') { e.preventDefault(); goToPage(currentPageIdx + 1); }
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') { e.preventDefault(); goToPage(currentPageIdx - 1); }
+    }
   });
 
   article.addEventListener('click', (e) => {
     if (!pinMode) return;
     if (e.target.closest('.comment-pin, .thread-popover, mark.annotation')) return;
     e.preventDefault();
-    const rect = article.getBoundingClientRect();
+    const container = pages ? pages[currentPageIdx] : article;
+    const rect = container.getBoundingClientRect();
+    const anchor = { kind: ANCHOR.POINT, left: Math.round(e.clientX - rect.left), top: Math.round(e.clientY - rect.top) };
+    if (pages) anchor.pageId = container.id;
     const thread = {
       id: 't-' + rid(),
-      anchor: { kind: ANCHOR.POINT, left: Math.round(e.clientX - rect.left), top: Math.round(e.clientY - rect.top) },
+      anchor: anchor,
       comments: [],
     };
     state.threads.push(thread);
@@ -894,6 +975,7 @@
     const html = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
 
     state.threads.forEach((t) => { if (isPoint(t)) renderPin(t); });
+    updatePinVisibility();
 
     try {
       if ('showSaveFilePicker' in window) {

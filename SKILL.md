@@ -27,6 +27,26 @@ That's the whole protocol. The output is one self-contained `.html` file.
 - Click the floating pin button, then click anywhere in the article to drop a free-floating comment.
 - Each highlight or pin opens a sticky note showing the full thread; **Reply** appends to the thread (⌘+Enter posts).
 - **Save** (or ⌘S) writes the annotated HTML back to disk via the File System Access API.
+- **Multi-page / slide deck support**: mark each page or slide with `data-commentable-page`. The runtime shows one page at a time, adds ◀/▶ navigation to the toolbar, and scopes pins and highlights to their originating page. Arrow keys also navigate pages. Elements with class `slide` or `page` are detected automatically.
+
+## Multi-page usage
+
+To produce a slide deck or paginated document, put each page inside `<article>` as a direct child tagged with `data-commentable-page`:
+
+```html
+<article>
+  <section data-commentable-page>
+    <h1>Slide 1</h1>
+    <p>Content…</p>
+  </section>
+  <section data-commentable-page>
+    <h1>Slide 2</h1>
+    <p>Content…</p>
+  </section>
+</article>
+```
+
+The runtime hides all but the first page on load and injects prev/next buttons. All other annotation features work per-page.
 
 ## When to use vs. skip
 
